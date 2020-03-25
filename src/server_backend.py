@@ -8,7 +8,7 @@ import datetime as dt
 import src.lms_data_loader
 from src import settings
 from src.utils import debug
-
+import threading
 
 def dump_exists(path):
     return os.path.isfile(path) and os.path.isfile(path)
@@ -19,6 +19,16 @@ def dbconnect() -> pg.DB:
 
 
 logger = logging.getLogger(settings.logger_name)
+
+
+def synchronized(func):
+    func.__lock__ = threading.RLock()
+
+    def synced_func(*args, **kws):
+        with func.__lock__:
+            return func(*args, **kws)
+
+    return synced_func
 
 
 class Server:
@@ -36,6 +46,7 @@ class Server:
                                                                  server=self)
         logger.info("Created")
 
+    @synchronized
     def get_user_info(self, user_id=None, user_name=None):
         if user_id:
             query = f"""SELECT * FROM students WHERE id = {user_id} LIMIT 1"""
@@ -48,6 +59,7 @@ class Server:
 
         return result
 
+    @synchronized
     def get_timetable(self, user_id, time_start=None, time_end=None):
         logger.debug(f"Entering with parameters user_id = {user_id}, time_start = {time_start}, time_end = {time_end}")
         if not time_start:
@@ -70,10 +82,12 @@ class Server:
             logger.debug(result)
         return result
 
+    @synchronized
     def get_contingent_by_user_id(self, user_id):
         query = f"select * from get_contingent_id_by_user_id({user_id})"
         return self._connection.query(query).dictresult()
 
+    @synchronized
     def get_deadlines(self, user_id, time_start=None, time_end=None):
         if not time_start:
             time_start = datetime.now()
@@ -86,6 +100,7 @@ class Server:
         debug(result)
         return result
 
+    @synchronized
     def create_deadilne(self, user_id, contingent_id, time, weight, name, desc):
         debug(
             f"Entering with paraters user_id = {user_id}, time = {time}, weight = {weight}, name = {name}, desc = {desc}")
@@ -95,6 +110,7 @@ class Server:
         logger.debug(f"Inserted: {res}")
         return res
 
+    @synchronized
     def change_deadline_estimate(self, user_id, deadline_id, new_value):
         query = f"select id from task_time where student_id={user_id} and deadline_id={deadline_id}"
         logger.debug(f"Query {query}")
@@ -110,6 +126,7 @@ class Server:
         logger.debug(f"Update: {query}")
         self._connection.query(query)
 
+    @synchronized
     def change_deadline_real(self, user_id, deadline_id, new_value):
         query = f"select id from task_time where student_id={user_id} and deadline_id={deadline_id}"
         logger.debug(f"Query {query}")
@@ -120,6 +137,7 @@ class Server:
         self._connection.query(query)
         pass
 
+    @synchronized
     def get_simple_data(self, query, lms_data_loader=None, term=None):
         logger.debug(f"Sending query {query}")
 
@@ -141,6 +159,7 @@ class Server:
 
         return result
 
+    @synchronized
     def get_building(self, id=None, building_name=None, building_addr=None):
         query = None
         term = None
@@ -158,6 +177,7 @@ class Server:
             raise Exception('need more arguments')
         return self.get_simple_data(query, self.building_loader, term)
 
+    @synchronized
     def get_auditorium(self, id=None, number=None, building_id=None, building_name=None):
         key = None
         value = None
@@ -187,6 +207,7 @@ class Server:
 
         return self.get_simple_data(query, self.auditorium_loader, term)
 
+    @synchronized
     def get_teacher(self, id=None, name=None, first_name=None, last_name=None, patronymic_name=None):
         query = None
         term = None
@@ -201,6 +222,7 @@ class Server:
             raise Exception('need more arguments')
         return self.get_simple_data(query, self.teacher_loader, term)
 
+    @synchronized
     def get_learning_course(self, id=None, name=None):
         if id is not None:
             query = f"select * from learning_courses where id={id}"

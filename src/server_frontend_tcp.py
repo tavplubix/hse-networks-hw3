@@ -1,10 +1,9 @@
 
-import sys
 import socket
 import signal
 import logging
 import time
-
+import threading
 import json
 
 from src.server_backend import Server
@@ -13,9 +12,11 @@ from src.server_backend import Server
 class Session:
     def __init__(self, conn: socket.socket, addr):
         self.conn = conn
-        self.conn.settimeout(60)
+        self.conn.settimeout(600)
         self.client_addr = addr
-        self.timeout = 60
+        self.timeout = 600
+        self.thread = None
+        self.server = None
 
     def send_packet(self, obj):
         bdata = json.dumps(obj, default=str).encode()
@@ -64,6 +65,8 @@ class TCPServer:
         self.control_sock.listen()
         print("Listen", self.host, self.port)
         self.shutdown = None
+        self.sessions = set()
+        self.sessions_lock = threading.Lock()
 
         def term_signal_handler(sig, arg):
             print("Got signal", sig)
@@ -83,12 +86,29 @@ class TCPServer:
                 conn, addr = self.control_sock.accept()
                 print("Accepted connection from", addr)
                 session = Session(conn, addr)
-                self.process_connection(session)
+                session.server = self
+                session.thread = threading.Thread(target=self.process_connection_thread, args=(session,))
+                session.thread.daemon = True
+                session.thread.start()
+            except socket.timeout:
+                pass
             except BaseException as e:
                 print("ERROR: Got exception:", e)
 
+    def process_connection_thread(self, session: Session):
+        try:
+            print(f"Begin processing connection from {session.client_addr}")
+            with self.sessions_lock:
+                self.sessions.add(session)
+            self.process_connection(session)
+        except BaseException as e:
+            print(f"ERROR: Got exception while procession connection {session.client_addr}: {e}")
+        finally:
+            with self.sessions_lock:
+                self.sessions.remove(session)
+            print(f"End processing connection from {session.client_addr}")
+
     def process_connection(self, session: Session):
-        print("begin processing")
         while True:
             try:
                 request = session.recv_packet()
@@ -106,8 +126,6 @@ class TCPServer:
             except Exception as e:
                 logging.info('Caught ' + str(e))
                 session.send_packet({'status': 'error', 'exception': str(e)})
-
-        print("end processing")
 
     def process_request(self, request):
         method = request['method']
@@ -138,7 +156,6 @@ class TCPServer:
             raise Exception('Unknown method ' + str(method))
 
         return {}
-
 
     def stop(self):
         print("Shutting down ...")
