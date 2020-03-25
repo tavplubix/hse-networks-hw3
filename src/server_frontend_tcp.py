@@ -18,7 +18,7 @@ class Session:
         self.timeout = 60
 
     def send_packet(self, obj):
-        bdata = json.dumps(obj).encode()
+        bdata = json.dumps(obj, default=str).encode()
         size = len(bdata)
         logging.debug(f'Sending object of size {size} to {self.client_addr}: {bdata}')
         packet = size.to_bytes(4, byteorder='big') + bdata
@@ -123,12 +123,12 @@ class TCPServer:
         if method == 'get_deadlines':
             return self.srv.get_deadlines(request['user_id'], time_start, time_end)
 
-        if method == 'create_deadilne':
+        if method == 'create_deadline':
             contingent_id = request.get("contingent_id")
-            time = request.args.get("time")
-            weight = float(request.get("weight", default='0'))
+            time = request.get("time")
+            weight = float(request.get("weight", '0'))
             name = request.get("name")
-            desc = request.get("desc", default='')
+            desc = request.get("desc", '')
             self.srv.create_deadilne(request['user_id'], contingent_id, time, weight, name, desc)
         elif method == 'change_deadline_estimate':
             self.srv.change_deadline_estimate(request['user_id'], request['deadline_id'], request['val'])
