@@ -1,10 +1,11 @@
+drop schema if exists public cascade;
 create schema public;
 
 comment on schema public is 'standard schema';
 
 alter schema public owner to postgres;
 
-SELECT pg_catalog.set_config('search_path', 'public', false);
+select pg_catalog.set_config('search_path', 'public', false);
 
 create table lesson_time
 (
@@ -201,8 +202,25 @@ comment on table students_to_contingents is 'n:n';
 
 alter table students_to_contingents owner to postgres;
 
+create table logins
+(
+    login varchar(255) not null
+		constraint logins_pk
+			primary key,
+	student_id bigint not null
+		constraint logins_id_fk
+			references students
+				on update cascade on delete cascade,
+	pwd_sha varchar(64) not null
+);
 
+create unique index logins_login_uindex
+	on logins (login);
 
+create unique index logins_id_uindex
+	on logins (student_id);
+
+alter table logins owner to postgres;
 
 create or replace function find_users(_first_name character varying, _last_name character varying, _patronymic_name character varying) returns SETOF students
   language plpgsql
@@ -241,13 +259,15 @@ alter function get_contingent_id_by_user_id(bigint) owner to postgres;
 
 
 
-create or replace function get_deadlines_by_id(_user_id bigint, _time_start timestamp without time zone, _time_end timestamp without time zone) returns TABLE(user_id bigint, first_name character varying, flow character varying, course_name_short character varying, course_name text, deadline_id bigint, deadline_name character varying, deadline_time timestamp without time zone, deadlines_description text, estimated_time interval, real_time interval)
+create or replace function get_deadlines_by_id(_user_id bigint, _time_start timestamp without time zone, _time_end timestamp without time zone) returns
+TABLE(--user_id bigint, first_name character varying,
+flow character varying, course_name_short character varying, course_name text, deadline_id bigint, deadline_name character varying, deadline_time timestamp without time zone, deadlines_description text, estimated_time interval, real_time interval)
   language plpgsql
 as
 $$
 begin
-  return query select students.id                 as "id",
-                      students.first_name         as "first_name",
+  return query select --students.id                 as "id",
+                      --students.first_name         as "first_name",
                       contingents.contingent_name as "flow",
                       courses.shortname           as "course_name_short",
                       courses.fullname            as "course_name",
@@ -266,7 +286,8 @@ begin
 
                where students.id = _user_id
                  and deadlines.deadline_time between _time_start and _time_end
-               group by students.id, students.first_name, contingents.contingent_name, courses.shortname, courses.fullname, deadlines.id, deadlines.deadline_name, deadlines.deadline_time, deadlines.description;
+               group by --students.id, students.first_name,
+               contingents.contingent_name, courses.shortname, courses.fullname, deadlines.id, deadlines.deadline_name, deadlines.deadline_time, deadlines.description;
 end
 $$;
 
@@ -275,7 +296,8 @@ alter function get_deadlines_by_id(bigint, timestamp, timestamp) owner to postgr
 
 
 
-create or replace function get_timetable_by_user_id(_user_id bigint) returns TABLE(user_id bigint, first_name character varying, lesson_time_id bigint, date date, start time without time zone, "end" time without time zone, building_addr text, lesson_type character varying, flow character varying, course_short_name character varying, course_full_name text)
+create or replace function get_timetable_by_user_id(_user_id bigint) returns
+TABLE(user_id bigint, first_name character varying, lesson_time_id bigint, date date, start time without time zone, "end" time without time zone, building_addr text, lesson_type character varying, flow character varying, course_short_name character varying, course_full_name text)
   language plpgsql
 as
 $$
@@ -314,13 +336,13 @@ $$
 begin
   insert into deadlines(deadline_time, weight, deadline_name, description, contingent_id, course_id)
   values (_deadline_time, _weight, _name, _description, _contingent_id,
-          (select course_id from lesson where _contingent_id=_contingent_id limit 1));
+          (select course_id from lesson where contingent_id=_contingent_id limit 1));
 end
 $$;
 
 alter function insert_deadline(bigint, bigint, timestamp, double precision, varchar, text) owner to postgres;
 
-ALTER DATABASE postgres SET datestyle TO "ISO, DMY";
+alter database postgres set datestyle to "ISO, DMY";
 
 insert into lesson_time values
 (1,	'09:00:00',	'10:20:00'),

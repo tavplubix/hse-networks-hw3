@@ -10,9 +10,9 @@ class Connection:
         self.host = host
         self.port = port
         self.conn = socket.socket()
-        self.conn.settimeout(10)
+        self.conn.settimeout(5)
         self.conn.connect((host, port))
-        self.timeout = 10
+        self.timeout = 5
 
     def send_packet(self, obj: dict) -> None:
         bdata = json.dumps(obj).encode()
@@ -24,10 +24,10 @@ class Connection:
 
     def recvall(self, size, time_left):
         bdata = bytes()
-        while len(bdata) < size or 0 < time_left[0]:
-            start = time.time() * 1000
+        while len(bdata) < size and 0 < time_left[0]:
+            start = time.time()
             bdata += self.conn.recv(size - len(bdata))
-            time_left[0] -= time.time() * 1000 - start
+            time_left[0] -= time.time() - start
             #print(f'Received {len(bdata)} of {size} bytes, {time_left} seconds left')
 
         if len(bdata) < size:
@@ -64,8 +64,14 @@ class Client:
                 line = sys.stdin.readline()
                 tokens = [x.strip() for x in line.split(' ') if len(x.strip()) != 0]
                 self.process_command(tokens)
+            except TimeoutError:
+                print('Timeout. Disconnected.')
+                self.c = None
+            except ConnectionResetError:
+                print('Connection reset by peer ')
+                self.c = None
             except Exception as e:
-                print('ERROR: ', e)
+                print('ERROR:', type(e), e)
             except KeyboardInterrupt:
                 print('Type "q" to exit')
             print('cmd> ', end='')
@@ -114,31 +120,47 @@ class Client:
 
         elif tokens[0] == 'students':
             self.print_array(self.request({'method': 'get_user_info', 'user_name': tokens[1]}))
-        elif tokens[0] == 'courses':
-            self.print_array(self.request({'method': 'get_contingent_by_user_id', 'user_id': tokens[1]}))
+        elif tokens[0] == 'groups':
+            req = {'method': 'get_contingent_by_user_id'}
+            if 1 < len(tokens):
+                req['user_id'] = tokens[1]
+            self.print_array(self.request(req))
         elif tokens[0] == 'lessons':
-            self.print_array(self.request({'method': 'get_timetable', 'user_id': tokens[1]}))
+            req = {'method': 'get_timetable'}
+            if 1 < len(tokens):
+                req['user_id'] = tokens[1]
+            self.print_array(self.request(req))
         elif tokens[0] == 'deadlines':
-            self.print_array(self.request({'method': 'get_deadlines', 'user_id': tokens[1]}))
+            self.print_array(self.request({'method': 'get_deadlines'}))
 
         elif tokens[0] == 'new' and tokens[1] == 'deadline':
-            req = {'method': 'create_deadline', 'user_id': tokens[2]}
-            req['contingent_id'] = int(tokens[3])
-            req['time'] = tokens[4]
-            req['name'] = tokens[5]
+            req = {'method': 'create_deadline'}
+            req['contingent_id'] = int(tokens[2])
+            req['time'] = tokens[3]
+            req['name'] = tokens[4]
             self.request(req)
             print('ok')
         elif tokens[0] == 'deadline' and tokens[1] == 'estimated':
-            req = {'method': 'change_deadline_estimate', 'user_id': tokens[2]}
+            req = {'method': 'change_deadline_estimate'}
             req['deadline_id'] = int(tokens[3])
             req['val'] = float(tokens[4])
             self.request(req)
             print('ok')
         elif tokens[0] == 'deadline' and tokens[1] == 'real':
-            req = {'method': 'change_deadline_real', 'user_id': tokens[2]}
+            req = {'method': 'change_deadline_real'}
             req['deadline_id'] = int(tokens[3])
             req['val'] = float(tokens[4])
             self.request(req)
+            print('ok')
+
+        elif tokens[0] == 'register':
+            self.request({'method': 'register', 'login': tokens[1], 'password': tokens[2], 'student_id': tokens[3]})
+            print('ok')
+        elif tokens[0] == 'login':
+            self.request({'method': 'login', 'login': tokens[1], 'password': tokens[2]})
+            print('ok')
+        elif tokens[0] == 'logout':
+            self.request({'method': 'logout'})
             print('ok')
         else:
             raise Exception(f'Unknown command "{" ".join(tokens)}". Try command "help"')

@@ -9,6 +9,8 @@ import src.lms_data_loader
 from src import settings
 from src.utils import debug
 import threading
+import hashlib
+import re
 
 def dump_exists(path):
     return os.path.isfile(path) and os.path.isfile(path)
@@ -63,9 +65,9 @@ class Server:
     def get_timetable(self, user_id, time_start=None, time_end=None):
         logger.debug(f"Entering with parameters user_id = {user_id}, time_start = {time_start}, time_end = {time_end}")
         if not time_start:
-            time_start = datetime.now()
+            time_start = datetime.now() - timedelta(days=14)
         if not time_end:
-            time_end = datetime.now() + timedelta(days=365)
+            time_end = datetime.now() + timedelta(days=14)
         query = f"""select *
                     from get_timetable_by_user_id({user_id}) timetable
                     where timetable.date between '{time_start}' and '{time_end}';"""
@@ -73,8 +75,8 @@ class Server:
         logger.debug(result)
         if len(result) == 0:
             logger.debug("Not found: call LessonLoader")
-            start = dt.datetime.strptime(time_start, "%d-%m-%Y").date()
-            end = dt.datetime.strptime(time_end, "%d-%m-%Y").date()
+            start = time_start.date()
+            end = time_end.date()
             _result = self.lesson_loader.load_lessons(user_id, start, end)
             self.lesson_loader.add_to_db(lessons=_result)
             logger.debug("Retry query")
@@ -90,7 +92,7 @@ class Server:
     @synchronized
     def get_deadlines(self, user_id, time_start=None, time_end=None):
         if not time_start:
-            time_start = datetime.now()
+            time_start = datetime.now() - timedelta(days=7)
         if not time_end:
             time_end = datetime.now() + timedelta(days=365)
         logger.debug(f"Entering with parameters user_id = {user_id}, time_start = {time_start}, time_end = {time_end}")
@@ -131,6 +133,8 @@ class Server:
         query = f"select id from task_time where student_id={user_id} and deadline_id={deadline_id}"
         logger.debug(f"Query {query}")
         task_ids = [x['id'] for x in self._connection.query(query).dictresult()]
+        if len(task_ids) == 0:
+            raise Exception('You should previously set estimated time')
         logger.debug(f"Ids {task_ids}")
         query = f"update task_time set real_time='{new_value} hours' where id in ({', '.join([str(x) for x in task_ids])})"
         logger.debug(f"Update: {query}")
@@ -232,3 +236,23 @@ class Server:
         else:
             raise Exception('need more arguments')
         return self.get_simple_data(query, lms_data_loader=None, term=None)
+
+    @synchronized
+    def register(self, login, password, student_id):
+        if re.match('^[a-z]*$', login) is None:
+            raise Exception('Login must contain only lowercase ascii letters')
+        pwd_sha = hashlib.sha256(password.encode()).hexdigest()
+        insert_query = f"insert into logins (login, pwd_sha, student_id) values ('{login}', '{pwd_sha}', {student_id})"
+        logger.debug(f"Insert: {insert_query}")
+        self._connection.query(insert_query)
+
+    @synchronized
+    def check_password(self, login, password):
+        if re.match('^[a-z]*$', login) is None:
+            raise Exception('Login must contain only lowercase ascii letters')
+        pwd_sha = hashlib.sha256(password.encode()).hexdigest()
+        query = f"select student_id from logins where login='{login}' and pwd_sha='{pwd_sha}'"
+        result = self._connection.query(query).dictresult()
+        if len(result) == 0:
+            raise Exception('Wrong login or password')
+        return result[0]['student_id']

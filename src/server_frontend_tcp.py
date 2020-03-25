@@ -17,6 +17,7 @@ class Session:
         self.timeout = 600
         self.thread = None
         self.server = None
+        self.user_id = None
 
     def send_packet(self, obj):
         bdata = json.dumps(obj, default=str).encode()
@@ -28,10 +29,10 @@ class Session:
 
     def recvall(self, size, time_left):
         bdata = bytes()
-        while len(bdata) < size or 0 < time_left[0]:
-            start = time.time() * 1000
+        while len(bdata) < size and 0 < time_left[0]:
+            start = time.time()
             bdata += self.conn.recv(size - len(bdata))
-            time_left[0] -= time.time() * 1000 - start
+            time_left[0] -= time.time() - start
 
         if len(bdata) < size:
             raise TimeoutError('Timeout while receiving data')
@@ -50,6 +51,15 @@ class Session:
     def end(self):
         logging.info('Closing connection from ' + str(self.client_addr))
         self.conn.close()
+
+    def assert_not_logged_in(self):
+        if self.user_id is not None:
+            raise Exception('You are logged in')
+
+    def get_user_id(self):
+        if self.user_id is None:
+            raise Exception('You are not logged in')
+        return self.user_id
 
 
 class TCPServer:
@@ -116,7 +126,7 @@ class TCPServer:
                     session.end()
                     break
 
-                data = self.process_request(request)
+                data = self.process_request(request, session)
                 session.send_packet({'status': 'ok', 'data': data})
 
             except OSError as e:
@@ -127,7 +137,7 @@ class TCPServer:
                 logging.info('Caught ' + str(e))
                 session.send_packet({'status': 'error', 'exception': str(e)})
 
-    def process_request(self, request):
+    def process_request(self, request: dict, session: Session):
         method = request['method']
         time_start = request.get('time_start', None)
         time_end = request.get('time_end', None)
@@ -135,11 +145,17 @@ class TCPServer:
         if method == 'get_user_info':
             return self.srv.get_user_info(user_name=request['user_name'])
         if method == 'get_contingent_by_user_id':
-            return self.srv.get_contingent_by_user_id(request['user_id'])
+            user_id = request.get('user_id', None)
+            if user_id is None:
+                user_id = session.get_user_id()
+            return self.srv.get_contingent_by_user_id(user_id)
         if method == 'get_timetable':
-            return self.srv.get_timetable(request['user_id'], time_start, time_end)
+            user_id = request.get('user_id', None)
+            if user_id is None:
+                user_id = session.get_user_id()
+            return self.srv.get_timetable(user_id, time_start, time_end)
         if method == 'get_deadlines':
-            return self.srv.get_deadlines(request['user_id'], time_start, time_end)
+            return self.srv.get_deadlines(session.get_user_id(), time_start, time_end)
 
         if method == 'create_deadline':
             contingent_id = request.get("contingent_id")
@@ -147,11 +163,23 @@ class TCPServer:
             weight = float(request.get("weight", '0'))
             name = request.get("name")
             desc = request.get("desc", '')
-            self.srv.create_deadilne(request['user_id'], contingent_id, time, weight, name, desc)
+            self.srv.create_deadilne(session.get_user_id(), contingent_id, time, weight, name, desc)
         elif method == 'change_deadline_estimate':
-            self.srv.change_deadline_estimate(request['user_id'], request['deadline_id'], request['val'])
+            self.srv.change_deadline_estimate(session.get_user_id(), request['deadline_id'], request['val'])
         elif method == 'change_deadline_real':
-            self.srv.change_deadline_real(request['user_id'], request['deadline_id'], request['val'])
+            self.srv.change_deadline_real(session.get_user_id(), request['deadline_id'], request['val'])
+
+        elif method == 'register':
+            session.assert_not_logged_in()
+            self.srv.register(request['login'], request['password'], int(request['student_id']))
+        elif method == 'login':
+            session.assert_not_logged_in()
+            session.user_id = self.srv.check_password(request['login'], request['password'])
+            print(f'User {session.user_id} logged in')
+        elif method == 'logout':
+            id = session.get_user_id()
+            session.user_id = None
+            print(f'User {id} logged out')
         else:
             raise Exception('Unknown method ' + str(method))
 
@@ -160,6 +188,9 @@ class TCPServer:
     def stop(self):
         print("Shutting down ...")
         self.shutdown = True
+        with self.sessions_lock:
+            for s in self.sessions:
+                s.end()
 
 
 
