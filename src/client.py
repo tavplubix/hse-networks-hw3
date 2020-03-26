@@ -10,9 +10,9 @@ class Connection:
         self.host = host
         self.port = port
         self.conn = socket.socket()
-        self.conn.settimeout(5)
+        self.conn.settimeout(30)
         self.conn.connect((host, port))
-        self.timeout = 5
+        self.timeout = 30
 
     def send_packet(self, obj: dict) -> None:
         bdata = json.dumps(obj).encode()
@@ -107,7 +107,29 @@ class Client:
         elif tokens[0] == 'q':
             quit()
         elif tokens[0] == 'help':
-            print('TODO')
+            print('Список комманд:')
+            print('q', ' - выход', sep='\t')
+            print('help', ' - показать эту справку', sep='\t')
+            print('connect HOST PORT', ' - подключиться к серверу', sep='\t')
+            print('disconnect', ' - отключиться от сервера', sep='\t')
+            print('students NAME', ' - поиск студентов с именем NAME', sep='\t')
+            print('register LOGIN PASSWORD STUDENT_ID',
+                  ' - создание пользователя с привязкой к студенту с STUDENT_ID (из вывода команды students)',
+                  sep='\t')
+            print('login LOGIN PASSWORD', ' - залогиниться', sep='\t')
+            print('logout', ' - разлогиниться', sep='\t')
+            print('groups [STUDENT_ID]',
+                  ' - список групп по учебным курсам для студента STUDENT_ID (по умолчанию текущий пользователь)',
+                  sep='\t')
+            print('lessons [STUDENT_ID]',
+                  ' - русписание для студента STUDENT_ID (по умолчанию текущий пользователь)', sep='\t')
+            print('deadlines', ' - список дедлайнов для текущего пользователя', sep='\t')
+            print('create deadline GROUP_ID DATETIME NAME',
+                  ' - создать дедлайн для группы GROUP_ID (из вывода groups)', sep='\t')
+            print('deadline estimated DEADLINE_ID HOURS',
+                  ' - указать предполагаемое время выполнения задания DEADLINE_ID (из вывода deadlines)', sep='\t')
+            print('deadline real DEADLINE_ID HOURS',
+                  ' - указать фактическое время выполнения задания DEADLINE_ID (из вывода deadlines)', sep='\t')
 
         elif tokens[0] == 'connect':
             self.c = Connection(tokens[1], int(tokens[2]))
@@ -142,14 +164,14 @@ class Client:
             print('ok')
         elif tokens[0] == 'deadline' and tokens[1] == 'estimated':
             req = {'method': 'change_deadline_estimate'}
-            req['deadline_id'] = int(tokens[3])
-            req['val'] = float(tokens[4])
+            req['deadline_id'] = int(tokens[2])
+            req['val'] = float(tokens[3])
             self.request(req)
             print('ok')
         elif tokens[0] == 'deadline' and tokens[1] == 'real':
             req = {'method': 'change_deadline_real'}
-            req['deadline_id'] = int(tokens[3])
-            req['val'] = float(tokens[4])
+            req['deadline_id'] = int(tokens[2])
+            req['val'] = float(tokens[3])
             self.request(req)
             print('ok')
 

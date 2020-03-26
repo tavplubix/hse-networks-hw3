@@ -6,5 +6,7 @@ services:
   restart: always
   environment:
    POSTGRES_PASSWORD: apppassword
+  volumes:
+    - ./:/create_script
   ports:
     - 5432:5432
